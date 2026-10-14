@@ -1,0 +1,27 @@
+{
+  "model": "models/checkpoints/checkpoint-500",
+  "test_rows": 10000,
+  "accuracy": 0.821,
+  "precision_positive": 0.8349,
+  "recall_positive": 0.8002,
+  "f1_positive": 0.8172,
+  "f1_macro": 0.8209,
+  "confusion_matrix": {
+    "labels": [
+      "negative",
+      "positive"
+    ],
+    "rows_actual_cols_predicted": [
+      [
+        4209,
+        791
+      ],
+      [
+        999,
+        4001
+      ]
+    ]
+  },
+  "inference_seconds": 807.1,
+  "tweets_per_second": 12.4
+}
