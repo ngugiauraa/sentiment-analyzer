@@ -1,19 +1,30 @@
 """
-Fine-tunes DistilBERT for binary sentiment classification on the full
-Sentiment140 dataset (~1.28M training tweets).
+Fine-tunes DistilBERT for binary sentiment classification on a 500K-tweet
+stratified subset of Sentiment140 (400K train / 50K val / 50K test, made by
+scripts/preprocess.py).
 
 Designed for CPU-only, 16GB RAM hardware:
     - moderate batch size + gradient accumulation (efficient without
       risking memory pressure)
-    - short max sequence length (tweets are short; saves memory + time)
-    - checkpoints saved every N steps, with automatic resume
+    - short max sequence length (48 tokens; tweets are short) with dynamic
+      padding, so each batch is only as long as its longest tweet
+    - checkpoints saved every 500 steps, with automatic resume
+    - leaves CPU headroom (TRAIN_THREADS, default 4 of 6) so the laptop
+      stays usable and runs cooler
 
 Run from the project root:
     python scripts/train.py
 
 If interrupted (crash, restart, closed terminal), just run the same
 command again — it will automatically resume from the latest checkpoint
-in models/checkpoints/ instead of starting over.
+in models/checkpoints/ instead of starting over. Checkpoints are never
+deleted by this script.
+
+Safety checks before training starts:
+    - if another training run is active (logs/train.lock holds a live PID),
+      it exits instead of starting a second one
+    - if models/final already exists, training is finished; it exits unless
+      you pass --force
 
 Progress is logged both to the console AND to logs/train.log, so you can
 close the terminal and check progress later with:
@@ -21,6 +32,7 @@ close the terminal and check progress later with:
 """
 
 import os
+import sys
 import logging
 import glob
 
@@ -45,7 +57,14 @@ MAX_LENGTH = 48
 BATCH_SIZE = 16
 GRAD_ACCUM_STEPS = 2
 NUM_EPOCHS = 1
-SAVE_STEPS = 2000
+SAVE_STEPS = 500
+# Evaluating 50K tweets takes many minutes on CPU, so progress checks use a
+# 5K slice of the validation set every 2,500 steps. The real score comes from
+# scripts/evaluate.py on the untouched test set.
+EVAL_STEPS = 2500
+EVAL_SUBSET = 5000
+NUM_THREADS = int(os.environ.get("TRAIN_THREADS", "4"))
+LOCK_PATH = os.path.join(os.path.dirname(__file__), "..", "logs", "train.lock")
 
 os.makedirs(LOG_DIR, exist_ok=True)
 logging.basicConfig(
@@ -64,8 +83,11 @@ def load_datasets():
     train_df = pd.read_csv(os.path.join(PROCESSED_DIR, "train.csv"))
     val_df = pd.read_csv(os.path.join(PROCESSED_DIR, "val.csv"))
 
+    train_df["text"] = train_df["text"].astype(str)
+    val_df["text"] = val_df["text"].astype(str)
     train_ds = Dataset.from_pandas(train_df[["text", "label"]])
-    val_ds = Dataset.from_pandas(val_df[["text", "label"]])
+    val_df = val_df.sample(n=min(EVAL_SUBSET, len(val_df)), random_state=42)
+    val_ds = Dataset.from_pandas(val_df[["text", "label"]], preserve_index=False)
 
     logger.info(f"  train: {len(train_ds)} examples, val: {len(val_ds)} examples")
     return train_ds, val_ds
@@ -105,10 +127,52 @@ def find_latest_checkpoint():
     return latest
 
 
+def pid_is_running(pid):
+    """True if a process with this PID exists (works on Windows and Linux)."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if not handle:
+                return False
+            code = ctypes.c_ulong()
+            ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return code.value == 259  # STILL_ACTIVE
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def guard_against_duplicate_runs():
+    if os.path.isdir(FINAL_MODEL_DIR) and os.listdir(FINAL_MODEL_DIR) and "--force" not in sys.argv:
+        logger.info(f"A finished model already exists in {FINAL_MODEL_DIR}. Not retraining (pass --force to train anyway).")
+        sys.exit(0)
+    if os.path.exists(LOCK_PATH):
+        with open(LOCK_PATH) as f:
+            pid = int(f.read().strip() or 0)
+        if pid and pid_is_running(pid):
+            logger.info(f"Another training run is active (PID {pid}). Not starting a second one.")
+            sys.exit(1)
+        logger.info(f"Removing stale lock from PID {pid}, which is no longer running.")
+    with open(LOCK_PATH, "w") as f:
+        f.write(str(os.getpid()))
+
+
 def main():
+    guard_against_duplicate_runs()
+    try:
+        train()
+    finally:
+        if os.path.exists(LOCK_PATH):
+            os.remove(LOCK_PATH)
+
+
+def train():
     tokenizer = DistilBertTokenizerFast.from_pretrained(MODEL_NAME)
-    torch.set_num_threads(os.cpu_count())
-    logger.info(f"Using {os.cpu_count()} CPU threads")
+    torch.set_num_threads(NUM_THREADS)
+    logger.info(f"Using {NUM_THREADS} of {os.cpu_count()} CPU threads (set TRAIN_THREADS to change)")
 
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
     model = DistilBertForSequenceClassification.from_pretrained(
@@ -125,17 +189,16 @@ def main():
         per_device_eval_batch_size=BATCH_SIZE,
         gradient_accumulation_steps=GRAD_ACCUM_STEPS,
         eval_strategy="steps",
-        eval_steps=SAVE_STEPS,
+        eval_steps=EVAL_STEPS,
         save_strategy="steps",
         save_steps=SAVE_STEPS,
-        save_total_limit=3,
         logging_dir=LOG_DIR,
         logging_steps=100,
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
         report_to=[],
         no_cuda=True,
-        dataloader_num_workers=2,
+        # Worker processes on Windows each load a copy of torch and compete
+        # for the same cores; the main process keeps up fine for short tweets.
+        dataloader_num_workers=0,
     )
 
     trainer = Trainer(

@@ -12,3 +12,6 @@ data/processed/*
 logs/
 models/checkpoints/
 models/final/
+reports/misclassified.csv
+*_predictions.csv
+logs/
