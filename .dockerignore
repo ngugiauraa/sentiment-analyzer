@@ -1,0 +1,10 @@
+venv/
+data/
+models/
+logs/
+reports/misclassified.csv
+.git/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/

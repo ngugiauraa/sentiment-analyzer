@@ -15,3 +15,5 @@ models/final/
 reports/misclassified.csv
 *_predictions.csv
 logs/
+.pytest_cache/
+.ruff_cache/
