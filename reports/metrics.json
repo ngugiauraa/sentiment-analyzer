@@ -1,11 +1,11 @@
 {
-  "model": "models/checkpoints/checkpoint-500",
-  "test_rows": 10000,
-  "accuracy": 0.821,
-  "precision_positive": 0.8349,
-  "recall_positive": 0.8002,
-  "f1_positive": 0.8172,
-  "f1_macro": 0.8209,
+  "model": "models/final",
+  "test_rows": 50000,
+  "accuracy": 0.8552,
+  "precision_positive": 0.8616,
+  "recall_positive": 0.8465,
+  "f1_positive": 0.854,
+  "f1_macro": 0.8552,
   "confusion_matrix": {
     "labels": [
       "negative",
@@ -13,15 +13,15 @@
     ],
     "rows_actual_cols_predicted": [
       [
-        4209,
-        791
+        21596,
+        3401
       ],
       [
-        999,
-        4001
+        3838,
+        21165
       ]
     ]
   },
-  "inference_seconds": 807.1,
-  "tweets_per_second": 12.4
+  "inference_seconds": 1885.7,
+  "tweets_per_second": 26.5
 }
