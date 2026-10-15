@@ -1,0 +1,8 @@
+# Serving only (API, Docker image, demo). Training needs requirements.txt.
+# Install the CPU build of torch first:
+#   pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
+torch==2.3.1
+transformers==4.42.3
+numpy==1.26.4
+fastapi==0.115.6
+uvicorn==0.32.1
