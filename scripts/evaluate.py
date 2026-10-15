@@ -16,12 +16,15 @@ Writes:
 import argparse
 import json
 import os
+import sys
 import time
 
 import pandas as pd
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_recall_fscore_support
 
-from predict_utils import DEFAULT_MODEL_DIR, LABEL_NAMES, ROOT, load_model, predict
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # run from anywhere
+
+from sentiment.model import LABEL_NAMES, ROOT, SentimentModel, default_source  # noqa: E402
 
 TEST_PATH = os.path.join(ROOT, "data", "processed", "test.csv")
 REPORTS_DIR = os.path.join(ROOT, "reports")
@@ -51,7 +54,7 @@ def save_confusion_matrix(cm, path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--model", default=DEFAULT_MODEL_DIR)
+    parser.add_argument("--model", default=default_source(), help="local folder or Hugging Face repo id")
     parser.add_argument("--limit", type=int, default=None, help="evaluate a stratified sample of this many rows")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=64)
@@ -63,10 +66,10 @@ def main():
         df = df.groupby("label").sample(n=args.limit // 2, random_state=42)
     print(f"Evaluating {args.model} on {len(df):,} test tweets...")
 
-    tokenizer, model = load_model(args.model, args.threads)
+    model = SentimentModel(args.model, args.threads)
     started = time.time()
-    preds, confs = predict(
-        df["text"].tolist(), tokenizer, model, args.batch_size,
+    preds, confs = model.predict(
+        df["text"].tolist(), args.batch_size,
         on_batch=lambda done, total: print(f"\r  {done:,}/{total:,}", end="", flush=True),
     )
     seconds = time.time() - started
@@ -77,7 +80,7 @@ def main():
     macro_f1 = precision_recall_fscore_support(y, preds, average="macro")[2]
     cm = confusion_matrix(y, preds, labels=[0, 1])
     metrics = {
-        "model": os.path.relpath(args.model, ROOT).replace("\\", "/"),
+        "model": os.path.relpath(args.model, ROOT).replace("\\", "/") if os.path.isdir(args.model) else args.model,
         "test_rows": int(len(df)),
         "accuracy": round(float(accuracy_score(y, preds)), 4),
         "precision_positive": round(float(precision), 4),
@@ -101,7 +104,7 @@ def main():
     print("Confusion matrix (rows = actual, columns = predicted):")
     print(pd.DataFrame(cm, index=["actual neg", "actual pos"], columns=["pred neg", "pred pos"]))
     print(f"\nAccuracy {metrics['accuracy']:.4f} | macro F1 {metrics['f1_macro']:.4f} | {metrics['tweets_per_second']} tweets/s")
-    print(f"Saved reports/metrics.json, reports/confusion_matrix.png, reports/misclassified.csv")
+    print("Saved reports/metrics.json, reports/confusion_matrix.png, reports/misclassified.csv")
 
 
 if __name__ == "__main__":

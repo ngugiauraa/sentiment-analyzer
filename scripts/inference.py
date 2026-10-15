@@ -17,7 +17,9 @@ import sys
 
 import pandas as pd
 
-from predict_utils import DEFAULT_MODEL_DIR, LABEL_NAMES, load_model, predict
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # run from anywhere
+
+from sentiment.model import LABEL_NAMES, SentimentModel, default_source  # noqa: E402
 
 
 def main():
@@ -26,7 +28,7 @@ def main():
     parser.add_argument("--output", help="where to write results (default: <input>_predictions.csv)")
     parser.add_argument("--text-column", default="text")
     parser.add_argument("--text", action="append", help="classify a single text (repeatable)")
-    parser.add_argument("--model", default=DEFAULT_MODEL_DIR)
+    parser.add_argument("--model", default=default_source(), help="local folder or Hugging Face repo id")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=64)
     args = parser.parse_args()
@@ -42,14 +44,13 @@ def main():
             sys.exit(f"Column '{args.text_column}' not found. Columns are: {', '.join(df.columns)}. Use --text-column.")
 
     texts = df[args.text_column].fillna("").astype(str).tolist()
-    tokenizer, model = load_model(args.model, args.threads)
-    labels, confidences = predict(texts, tokenizer, model, args.batch_size)
+    labels, confidences = SentimentModel(args.model, args.threads).predict(texts, args.batch_size)
 
     df["sentiment"] = [LABEL_NAMES[int(label)] for label in labels]
     df["confidence"] = confidences.round(4)
 
     if args.text:
-        for text, label, conf in zip(texts, df["sentiment"], df["confidence"]):
+        for text, label, conf in zip(texts, df["sentiment"], df["confidence"], strict=True):
             print(f"{label:8s} {conf:.3f}  {text}")
         return
 

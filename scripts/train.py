@@ -31,21 +31,21 @@ close the terminal and check progress later with:
     tail -f logs/train.log
 """
 
+import glob
+import logging
 import os
 import sys
-import logging
-import glob
 
 import pandas as pd
+import torch
 from datasets import Dataset
 from transformers import (
-    DistilBertTokenizerFast,
+    DataCollatorWithPadding,
     DistilBertForSequenceClassification,
-    TrainingArguments,
+    DistilBertTokenizerFast,
     Trainer,
+    TrainingArguments,
 )
-from transformers import DataCollatorWithPadding
-import torch
 
 PROCESSED_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "processed")
 CHECKPOINT_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "checkpoints")

@@ -11,32 +11,20 @@ Outputs:
 """
 
 import os
-import re
+import sys
+
 import pandas as pd
 from sklearn.model_selection import train_test_split
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # run from anywhere
+
+from sentiment.text import clean_tweet  # noqa: E402  (same cleaning as at prediction time)
 
 RAW_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "raw", "sentiment140.csv")
 PROCESSED_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "processed")
 
 COLUMN_NAMES = ["target", "id", "date", "flag", "user", "text"]
 SUBSET_SIZE = 500_000
-
-def clean_tweet(text: str) -> str:
-    """
-    Basic tweet text cleaning:
-    - strip URLs (they carry no sentiment signal and add noise)
-    - strip @mentions (usernames aren't sentiment-bearing tokens)
-    - collapse repeated whitespace
-    Deliberately KEEPS hashtags and punctuation/emoticons — those often
-    carry real sentiment signal (e.g. ":)" or "#disappointed") that a
-    model like DistilBERT can actually learn from, unlike a purely
-    keyword-based classifier.
-    """
-    text = re.sub(r"http\S+|www\.\S+", "", text)
-    text = re.sub(r"@\w+", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
 
 def load_and_clean():
     print("Loading raw CSV (1.6M rows — this will take a moment)...")
@@ -90,7 +78,7 @@ def split_and_save(df):
     val_df.to_csv(os.path.join(PROCESSED_DIR, "val.csv"), index=False)
     test_df.to_csv(os.path.join(PROCESSED_DIR, "test.csv"), index=False)
 
-    print(f"\nSaved splits:")
+    print("\nSaved splits:")
     print(f"  train: {len(train_df)} rows -> data/processed/train.csv")
     print(f"  val:   {len(val_df)} rows -> data/processed/val.csv")
     print(f"  test:  {len(test_df)} rows -> data/processed/test.csv")
